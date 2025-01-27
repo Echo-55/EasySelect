@@ -47,9 +47,6 @@ namespace EasySelect
             modEntry.OnSessionStart += OnSessionStart;
             modEntry.OnGUI += OnGUI;
             modEntry.OnSaveGUI += OnSaveGUI;
-
-            // Initialize the logger
-            ESLogger.Initialize(modEntry.Logger, Settings.DebugMode);
         }
 
         /// <summary>

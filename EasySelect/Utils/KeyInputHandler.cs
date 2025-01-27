@@ -1,5 +1,6 @@
 ﻿using System.Collections;
 using System.Linq;
+using System.Reflection;
 using Game.Messages;
 using HarmonyLib;
 using Model;
@@ -14,6 +15,8 @@ namespace EasySelect.Utils;
 public class KeyInputHandler(KeyBinds keyBinds)
 {
     private KeyBinds _keyBinds = keyBinds;
+
+    private FieldInfo _persistenceFieldInfo;
 
     public void HandleKeyInputs()
     {
@@ -56,8 +59,14 @@ public class KeyInputHandler(KeyBinds keyBinds)
             return;
         }
 
-        if (AccessTools.Field(typeof(AutoEngineerPlanner), "_persistence")
-                .GetValue(aePlanner) is not AutoEngineerPersistence persistence)
+        _persistenceFieldInfo ??= AccessTools.Field(typeof(AutoEngineerPlanner), "_persistence");
+        if (_persistenceFieldInfo == null)
+        {
+            ESLogger.LogError("FieldInfo not found.");
+            return;
+        }
+
+        if (_persistenceFieldInfo.GetValue(aePlanner) is not AutoEngineerPersistence persistence)
         {
             ESLogger.LogError("AutoEngineerPersistence not found.");
             return;
