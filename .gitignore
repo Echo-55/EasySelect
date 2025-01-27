@@ -1,0 +1,7 @@
+postbuild.ps1
+bin/
+obj/
+/packages/
+riderModule.iml
+EasySelect.sln.DotSettings.user
+/_ReSharper.Caches/

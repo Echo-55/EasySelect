@@ -1,0 +1,12 @@
+{
+  "Id": "EasySelect",
+  "DisplayName": "EasySelect",
+  "Author": "Echo55",
+  "Version": "1.1.5",
+  "ManagerVersion": "0.31.1",
+  "GameVersion": "2024.6.7",
+  "Requirements": [],
+  "LoadAfter": [],
+  "AssemblyName": "EasySelect.dll",
+  "EntryMethod": "EasySelect.Main.Load"
+}
