@@ -1,4 +1,5 @@
 postbuild.ps1
+.idea/
 bin/
 obj/
 /packages/

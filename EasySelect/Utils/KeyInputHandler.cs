@@ -1,56 +1,82 @@
-﻿using System.Collections;
-using System.Linq;
+﻿using System;
+using System.Collections;
+using System.Collections.Generic;
 using System.Reflection;
 using Game.Messages;
+using Game.State;
 using HarmonyLib;
 using Model;
 using Model.AI;
-using UI;
 using UI.Common;
 using UI.EngineControls;
 using UnityEngine;
+using UnityModManagerNet;
+using ZLinq;
 
 namespace EasySelect.Utils;
 
-public class KeyInputHandler(KeyBinds keyBinds)
+public class KeybindAction(KeyBinding keyBinding, Action action)
 {
-    private KeyBinds _keyBinds = keyBinds;
+    public void HandleKeyInput()
+    {
+        if (keyBinding.Down())
+            action?.Invoke();
+    }
+}
+
+public class KeyInputHandler
+{
+    private KeyBindSettings _keyBindSettings;
 
     private FieldInfo _persistenceFieldInfo;
 
+    private List<KeybindAction> _keybindActions;
+
+    private readonly Dictionary<KeyCode, AutoEngineerMode> _aeModeKeybinds = new()
+    {
+        { KeyCode.Keypad1, AutoEngineerMode.Off },
+        { KeyCode.Keypad2, AutoEngineerMode.Road },
+        { KeyCode.Keypad3, AutoEngineerMode.Yard },
+        { KeyCode.Keypad4, AutoEngineerMode.Waypoint }
+    };
+
+    public KeyInputHandler(KeyBindSettings keyBindSettings)
+    {
+        _keyBindSettings = keyBindSettings;
+        InitializeKeybindActions();
+    }
+
+    private void InitializeKeybindActions()
+    {
+        _keybindActions =
+        [
+            new KeybindAction(_keyBindSettings.HaltTheCurrentLoco, HandleHaltCurrentLocoInput),
+            new KeybindAction(_keyBindSettings.ReleaseAllHandBrakes, HandleReleaseHandbrakesInput),
+            new KeybindAction(_keyBindSettings.ConnectAllGladhands, HandleConnectGladHandsInput),
+            new KeybindAction(_keyBindSettings.FollowSelectedTrain, HandleFollowCarInput),
+            new KeybindAction(_keyBindSettings.JumpToLastCarDestination, HandleJumpToLastCarDestinationInput)
+        ];
+    }
+
     public void HandleKeyInputs()
     {
-        if (Input.GetKeyDown(_keyBinds.SelectNextLoco))
+        foreach (KeybindAction keybindAction in _keybindActions)
         {
-            UtilityClass.SelectNextLoco(GameInput.IsShiftDown);
-        }
-        else if (Input.GetKeyDown(_keyBinds.SelectPreviousLoco))
-        {
-            UtilityClass.SelectPreviousLoco(GameInput.IsShiftDown);
+            keybindAction.HandleKeyInput();
         }
 
-        HandleHaltCurrentLocoInput();
-        HandleReleaseHandbrakesInput();
-        HandleConnectGladHandsInput();
-        HandleFollowCarInput();
-        HandleJumpToLastCarDestinationInput();
+        HandleChangingSelectedLocosAEMode();
     }
 
-    public void UpdateKeyBinds(KeyBinds keyBinds)
-    {
-        _keyBinds = keyBinds;
-    }
+    public void UpdateKeyBinds(KeyBindSettings keyBindSettings) { _keyBindSettings = keyBindSettings; }
 
     private void HandleHaltCurrentLocoInput()
     {
-        if (!Input.GetKeyDown(_keyBinds.HaltTheCurrentLoco)) return;
+        if (!Main.Settings.KeyBindSettings.HaltTheCurrentLoco.Down()) return;
 
         BaseLocomotive currentLoco = UtilityClass.GetCurrentlySelectedLoco();
         if (!currentLoco)
-        {
-            ESLogger.LogDebugError("No locomotive selected.");
             return;
-        }
 
         AutoEngineerPlanner aePlanner = currentLoco.AutoEngineerPlanner;
         if (!aePlanner)
@@ -85,24 +111,19 @@ public class KeyInputHandler(KeyBinds keyBinds)
         }
 
         waypointControls.DidClickStop();
+        var playerName = StateManager.Shared.PlayersManager.LocalPlayer.Name;
         IEnumerator noticeFromLocoCo =
-            UtilityClass.PostTempNoticeFromLocoCO(currentLoco, "es-halt", "Halted by user.", 5f);
+            UtilityClass.PostTempNoticeFromLocoCO(currentLoco, "es-halt", $"AE waypoint cleared by {playerName}.", 5f);
         currentLoco.StartCoroutine(noticeFromLocoCo);
         UtilityClass.ShowToast($"Clearing waypoint for: {currentLoco.DisplayName}", ToastPosition.Bottom);
     }
 
     private void HandleReleaseHandbrakesInput()
     {
-        if (!Input.GetKeyDown(_keyBinds.ReleaseAllHandBrakes)) return;
+        if (!Main.Settings.KeyBindSettings.ReleaseAllHandBrakes.Down()) return;
 
         var connectedCars = UtilityClass.GetCurrentlySelectedTrainCars();
-        var enumerable = connectedCars as Car[] ?? connectedCars.ToArray();
-        if (!enumerable.Any())
-        {
-            ESLogger.LogDebugError("No connected cars found.");
-            return;
-        }
-
+        var enumerable = connectedCars.AsValueEnumerable();
         foreach (Car car in enumerable)
         {
             car.SetHandbrake(false);
@@ -113,50 +134,44 @@ public class KeyInputHandler(KeyBinds keyBinds)
         BaseLocomotive currentlySelectedLoco = UtilityClass.GetCurrentlySelectedLoco();
         currentlySelectedLoco?.StartCoroutine(
             UtilityClass.PostTempNoticeFromLocoCO(currentlySelectedLoco, "es-release",
-                "handbrakes released.", 3f));
+                "Handbrakes released.", 3f));
     }
 
     private void HandleConnectGladHandsInput()
     {
-        if (!Input.GetKeyDown(_keyBinds.ConnectAllGladhands)) return;
+        // if (!Input.GetKeyDown(_keyBindSettings.ConnectAllGladhands)) return;
+        if (!Main.Settings.KeyBindSettings.ConnectAllGladhands.Down()) return;
 
         ESLogger.LogDebug("Connecting glad hands.");
 
         BaseLocomotive selectedLoco = UtilityClass.GetCurrentlySelectedLoco();
         if (!selectedLoco)
-        {
-            ESLogger.LogDebugError("No locomotive selected.");
             return;
-        }
 
-        var carList = selectedLoco.EnumerateCoupled().ToList();
+        var carList = selectedLoco.EnumerateCoupled().AsValueEnumerable().ToList();
         TrainController.ConnectCars(carList);
     }
 
     private void HandleFollowCarInput()
     {
-        if (!Input.GetKeyDown(_keyBinds.FollowSelectedTrain)) return;
+        // if (!Input.GetKeyDown(_keyBindSettings.FollowSelectedTrain)) return;
+        if (!Main.Settings.KeyBindSettings.FollowSelectedTrain.Down()) return;
 
         BaseLocomotive selectedLoco = UtilityClass.GetCurrentlySelectedLoco();
         if (!selectedLoco)
-        {
-            ESLogger.LogDebugError("No locomotive selected.");
             return;
-        }
 
         CameraSelector.shared.FollowCar(selectedLoco);
     }
 
     private void HandleJumpToLastCarDestinationInput()
     {
-        if (!Input.GetKeyDown(_keyBinds.JumpToLastCarDestination)) return;
+        // if (!Input.GetKeyDown(_keyBindSettings.JumpToLastCarDestination)) return;
+        if (!Main.Settings.KeyBindSettings.JumpToLastCarDestination.Down()) return;
 
         BaseLocomotive selectedLoco = UtilityClass.GetCurrentlySelectedLoco();
         if (!selectedLoco)
-        {
-            ESLogger.LogDebugError("No locomotive selected.");
             return;
-        }
 
         Car lastCar = UtilityClass.GetLastCar(selectedLoco);
         if (!lastCar)
@@ -167,13 +182,42 @@ public class KeyInputHandler(KeyBinds keyBinds)
 
         ESLogger.LogDebug($"Last car found: {lastCar.name}");
 
-        if (UtilityClass.TryGetDestinationInfo(lastCar, out Vector3 destinationPosition))
+        // if the last car has a job destination, zoom to that
+        if (UtilityClass.TryGetJobDestinationInfoForCar(lastCar, out Vector3 destinationPosition))
         {
             CameraSelector.shared.ZoomToPoint(destinationPosition);
         }
         else
         {
             ESLogger.LogDebugError("Destination not found.");
+        }
+
+        // if the last car doesn't have a job, try jumping to the loco's AE waypoint
+        if (UtilityClass.TryGetAEWaypointForLoco(selectedLoco, out Vector3 waypointPosition))
+        {
+            CameraSelector.shared.ZoomToPoint(waypointPosition);
+        }
+        else
+        {
+            ESLogger.LogDebugError("Waypoint not found.");
+        }
+    }
+
+    private void HandleChangingSelectedLocosAEMode()
+    {
+        var selectedLoco = UtilityClass.GetCurrentlySelectedLoco();
+        if (!selectedLoco)
+            return;
+
+        foreach (var kvp in _aeModeKeybinds)
+        {
+            if (Input.GetKeyDown(kvp.Key))
+            {
+                ESLogger.LogDebug($"Changing AE mode to {kvp.Value}");
+                var command = new AutoEngineerCommand(selectedLoco.id, kvp.Value, true, 35, 0, null, null);
+                StateManager.ApplyLocal(command);
+                break;
+            }
         }
     }
 }
